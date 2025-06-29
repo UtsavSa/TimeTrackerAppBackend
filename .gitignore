@@ -1,0 +1,17 @@
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.sdf
+*.cache
+*.dbmdl
+*.log
+*.psess
+*.vsp
+*.vssscc
+*.vspscc
+*.tmp
+*.ide
+.env
+appsettings.Development.json
