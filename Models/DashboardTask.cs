@@ -19,6 +19,9 @@ namespace TimeTrackerApi.Models
 
         public double HoursTaken { get; set; }
 
-        public string Status { get; set; } = "todo"; // todo, in-progress, done
+        public string Status { get; set; }
+
+        [Required]
+        public string? UserId { get; set; }
     }
 }

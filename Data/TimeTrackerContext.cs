@@ -1,16 +1,17 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TimeTrackerApi.Models;
 
 namespace TimeTrackerApi.Data
 {
-    public class TimeTrackerContext : DbContext
+    public class TimeTrackerContext : IdentityDbContext<ApplicationUser>
     {
         public TimeTrackerContext(DbContextOptions<TimeTrackerContext> options)
             : base(options)
         {
         }
-        public DbSet<DashboardTask> DashboardTasks { get; set; }
 
+        public DbSet<DashboardTask> DashboardTasks { get; set; }
         public DbSet<TimeEntry> TimeEntries { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -19,6 +20,8 @@ namespace TimeTrackerApi.Data
         }
     }
 }
+
+
 
 //-----
 
