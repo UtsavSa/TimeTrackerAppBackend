@@ -7,6 +7,7 @@ using System.Text;
 using TimeTrackerApi.Data;
 using TimeTrackerApi.Models;
 using TimeTrackerApi.Services;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 var env = builder.Environment;
@@ -42,8 +43,16 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
 
 // Bind JwtSettings from config
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
-var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>();
-var key = Encoding.UTF8.GetBytes(jwtSettings.Secret);
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"];
+var jwtAudience = builder.Configuration["JwtSettings:Audience"];
+//var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>();
+
+var jwtSecret = builder.Configuration["JwtSettings:Secret"];
+
+if (string.IsNullOrWhiteSpace(jwtSecret))
+    throw new InvalidOperationException("Missing JwtSettings:Secret. In Production, set In Production, set env var JwtSettings__Secret.");
+//var key = Encoding.UTF8.GetBytes(jwtSettings.Secret);
+var key = Encoding.UTF8.GetBytes(jwtSecret);
 
 // ✅ Add HttpContextAccessor so you can get User from HttpContext in services
 builder.Services.AddHttpContextAccessor();
@@ -64,8 +73,8 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings.Issuer,
-        ValidAudience = jwtSettings.Audience,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
 });
@@ -131,6 +140,12 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+
+});
+
 app.UseHttpsRedirection();
 
 app.UseCors("ui");
@@ -141,23 +156,30 @@ app.UseAuthorization();
 app.MapGet("/healthz", () => Results.Ok("ok"));
 
 // Serve Angular static files
-app.UseDefaultFiles();
-app.UseStaticFiles();
+//app.UseDefaultFiles();
+//app.UseStaticFiles();
 
 // 🔁 Fallback routing for Angular (MUST be before MapControllers)
-app.Use(async (context, next) =>
-{
-    await next();
+//app.Use(async (context, next) =>
+//{
+//    await next();
 
-    if (context.Response.StatusCode == 404 &&
-        !Path.HasExtension(context.Request.Path.Value) &&
-        !context.Request.Path.Value.StartsWith("/api"))
-    {
-        context.Request.Path = "/index.html";
-        await next();
-    }
-});
+//    if (context.Response.StatusCode == 404 &&
+//        !Path.HasExtension(context.Request.Path.Value) &&
+//        !context.Request.Path.Value.StartsWith("/api"))
+//    {
+//        context.Request.Path = "/index.html";
+//        await next();
+//    }
+//});
 
 app.MapControllers();
 
+
+if (env.IsProduction())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<TimeTrackerContext>();
+    db.Database.Migrate();
+}
 app.Run();
