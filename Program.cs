@@ -2,20 +2,38 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using System.Text;
 using TimeTrackerApi.Data;
 using TimeTrackerApi.Models;
 using TimeTrackerApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var env = builder.Environment;
 
 // ============================
 //        Service Setup
 // ============================
 
 // Add EF Core with SQLite
-builder.Services.AddDbContext<TimeTrackerContext>(options =>
-    options.UseSqlite("Data Source=timetracker.db"));
+
+if (env.IsProduction())
+{
+    var pg = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("Missing Postgres connection string. ");
+    builder.Services.AddDbContext<TimeTrackerContext>(options => options.UseNpgsql(pg));
+
+}
+else
+{
+   
+
+    var sqlite = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=timetracker.db";
+    builder.Services.AddDbContext<TimeTrackerContext>(opt => opt.UseSqlite(sqlite));
+}
+
+
+    
 
 // Add Identity for user auth
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
@@ -58,22 +76,55 @@ builder.Services.AddScoped<TimeEntryService>();
 // Add CORS for frontend
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowLocalhost4200", policy =>
+    options.AddPolicy("ui", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+       var allowed = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+        policy.WithOrigins(allowed)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
 // Add Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+//builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TimeTracker API", Version = "v1" });
+
+    // 🔐 Add JWT auth to Swagger
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter 'Bearer {token}' (without quotes). Example: Bearer abcdef12345"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 // ============================
 //        Build & Run App
 // ============================
+
 
 var app = builder.Build();
 
@@ -82,10 +133,30 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowLocalhost4200");
+app.UseCors("ui");
 
-app.UseAuthentication(); // 🔐 Must come before UseAuthorization
+app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/healthz", () => Results.Ok("ok"));
+
+// Serve Angular static files
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// 🔁 Fallback routing for Angular (MUST be before MapControllers)
+app.Use(async (context, next) =>
+{
+    await next();
+
+    if (context.Response.StatusCode == 404 &&
+        !Path.HasExtension(context.Request.Path.Value) &&
+        !context.Request.Path.Value.StartsWith("/api"))
+    {
+        context.Request.Path = "/index.html";
+        await next();
+    }
+});
 
 app.MapControllers();
 

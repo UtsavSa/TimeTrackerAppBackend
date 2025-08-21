@@ -23,5 +23,10 @@ namespace TimeTrackerApi.Models
 
         [Required]
         public string? UserId { get; set; }
+
+        public Guid? SprintId { get; set; }
+        [ForeignKey("SprintId")]
+        public Sprint? Sprint { get; set; }
+
     }
 }

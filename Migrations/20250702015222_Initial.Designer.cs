@@ -11,8 +11,8 @@ using TimeTrackerApi.Data;
 namespace TimeTrackerApi.Migrations
 {
     [DbContext(typeof(TimeTrackerContext))]
-    [Migration("20250629230955_AddUserIdToDashboardTask")]
-    partial class AddUserIdToDashboardTask
+    [Migration("20250702015222_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -232,6 +232,9 @@ namespace TimeTrackerApi.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("SprintId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -245,7 +248,56 @@ namespace TimeTrackerApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("SprintId");
+
                     b.ToTable("DashboardTasks");
+                });
+
+            modelBuilder.Entity("TimeTrackerApi.Models.Sprint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("TotalHoursTaken")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("TotalStoryPoints")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.ToTable("Sprints");
+                });
+
+            modelBuilder.Entity("TimeTrackerApi.Models.SprintUser", b =>
+                {
+                    b.Property<Guid>("SprintId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SprintId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("SprintUsers");
                 });
 
             modelBuilder.Entity("TimeTrackerApi.Models.TimeEntry", b =>
@@ -326,6 +378,45 @@ namespace TimeTrackerApi.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TimeTrackerApi.Models.DashboardTask", b =>
+                {
+                    b.HasOne("TimeTrackerApi.Models.Sprint", "Sprint")
+                        .WithMany("Tasks")
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Sprint");
+                });
+
+            modelBuilder.Entity("TimeTrackerApi.Models.Sprint", b =>
+                {
+                    b.HasOne("ApplicationUser", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("TimeTrackerApi.Models.SprintUser", b =>
+                {
+                    b.HasOne("TimeTrackerApi.Models.Sprint", "Sprint")
+                        .WithMany("SprintUsers")
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ApplicationUser", "User")
+                        .WithMany("SprintUsers")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Sprint");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("TimeTrackerApi.Models.TimeEntry", b =>
                 {
                     b.HasOne("ApplicationUser", "User")
@@ -339,7 +430,16 @@ namespace TimeTrackerApi.Migrations
 
             modelBuilder.Entity("ApplicationUser", b =>
                 {
+                    b.Navigation("SprintUsers");
+
                     b.Navigation("TimeEntries");
+                });
+
+            modelBuilder.Entity("TimeTrackerApi.Models.Sprint", b =>
+                {
+                    b.Navigation("SprintUsers");
+
+                    b.Navigation("Tasks");
                 });
 #pragma warning restore 612, 618
         }

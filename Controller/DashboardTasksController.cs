@@ -29,18 +29,64 @@ namespace TimeTrackerApi.Controllers
         }
 
         // GET: api/dashboardtasks
+        //[HttpGet]
+        //public async Task<ActionResult<IEnumerable<DashboardTask>>> GetTasks()
+        //{
+        //    var userId = GetUserId();
+        //    if (userId == null) return Unauthorized();
+
+        //    var tasks = await _context.DashboardTasks
+        //        .Where(t => t.UserId == userId)
+        //        .ToListAsync();
+
+        //    return Ok(tasks);
+        //}
+
+        //[HttpGet]
+        //public async Task<ActionResult<IEnumerable<DashboardTask>>> GetTasks([FromQuery] Guid? sprintId = null)
+        //{
+        //    var userId = GetUserId();
+        //    if (userId == null) return Unauthorized();
+
+        //    var query = _context.DashboardTasks.Where(t => t.UserId == userId);
+
+        //    if (sprintId.HasValue)
+        //        query = query.Where(t => t.SprintId == sprintId.Value);
+
+        //    var tasks = await query.ToListAsync();
+        //    return Ok(tasks);
+        //}
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<DashboardTask>>> GetTasks()
+        public async Task<ActionResult<IEnumerable<DashboardTask>>> GetTasks([FromQuery] Guid? sprintId = null)
         {
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
 
-            var tasks = await _context.DashboardTasks
-                .Where(t => t.UserId == userId)
+            if (sprintId.HasValue)
+            {
+                // ✅ Confirm user is in the sprint
+                var isInSprint = await _context.SprintUsers
+                    .AnyAsync(su => su.SprintId == sprintId.Value && su.UserId == userId);
+
+                if (!isInSprint)
+                    return Forbid("You are not a member of this sprint");
+
+                // ✅ Return ALL tasks for the sprint (not just user's)
+                var sprintTasks = await _context.DashboardTasks
+                    .Where(t => t.SprintId == sprintId.Value)
+                    .ToListAsync();
+
+                return Ok(sprintTasks);
+            }
+
+            // ✅ If no sprint, return user's unassigned personal tasks
+            var personalTasks = await _context.DashboardTasks
+                .Where(t => t.UserId == userId && t.SprintId == null)
                 .ToListAsync();
 
-            return Ok(tasks);
+            return Ok(personalTasks);
         }
+
 
         // POST: api/dashboardtasks
         [HttpPost]
@@ -58,7 +104,8 @@ namespace TimeTrackerApi.Controllers
                 HoursNeeded = dto.HoursNeeded,
                 HoursTaken = dto.HoursTaken,
                 Status = dto.Status,
-                UserId = userId
+                UserId = userId,
+                SprintId = dto.SprintId,
             };
 
             _context.DashboardTasks.Add(task);
