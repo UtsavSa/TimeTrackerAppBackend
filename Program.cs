@@ -362,7 +362,7 @@ app.UseCors("ui");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/healthz", () => Results.Ok("ok"));
+app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 app.MapControllers();
 
 // Auto-migrate in Production
