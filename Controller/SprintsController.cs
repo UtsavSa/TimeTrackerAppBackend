@@ -58,6 +58,7 @@ namespace TimeTrackerApi.Controllers
             _context.Sprints.Add(sprint);
             await _context.SaveChangesAsync();
 
+
             var sprintDto = new SprintDto
             {
                 Id = sprint.Id,
