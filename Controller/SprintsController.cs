@@ -34,12 +34,20 @@ namespace TimeTrackerApi.Controllers
             if (user == null)
                 return Unauthorized();
 
+            var startUtc = dto.StartDate.Kind == DateTimeKind.Utc ? dto.StartDate : DateTime.SpecifyKind(dto.StartDate, DateTimeKind.Utc);
+
+            var endUtc = dto.EndDate.Kind == DateTimeKind.Utc ? dto.EndDate : DateTime.SpecifyKind(dto.EndDate, DateTimeKind.Utc);
+
+
+
             var sprint = new Sprint
             {
                 Id = Guid.NewGuid(),
                 Name = dto.Name,
-                StartDate = dto.StartDate,
-                EndDate = dto.EndDate,
+                //StartDate = dto.StartDate,
+                StartDate = startUtc,
+                EndDate = endUtc,
+                //EndDate = dto.EndDate,
                 CreatedByUserId = user.Id,
                 SprintUsers = new List<SprintUser>
                 {
