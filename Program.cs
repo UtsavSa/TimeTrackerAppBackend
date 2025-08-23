@@ -309,9 +309,10 @@ builder.Services.AddCors(options =>
     {
         var allowed = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 
-        if (allowed != null && allowed.Length > 0)
+        //if (allowed != null && allowed.Length > 0)
+        if (allowed is {  Length: > 0 })
         {
-            // ensure these values include scheme, e.g. "http://localhost:4200"
+            
             policy.WithOrigins(allowed)
                   .AllowAnyHeader()
                   .AllowAnyMethod();
@@ -376,6 +377,8 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 });
 
 app.UseHttpsRedirection();
+
+app.UseRouting();
 app.UseCors("ui");
 
 app.UseAuthentication();
