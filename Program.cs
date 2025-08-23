@@ -189,28 +189,30 @@
 
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Security.Claims;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;   // ← needed for JwtRegisteredClaimNames
 using TimeTrackerApi.Data;
 using TimeTrackerApi.Models;
+
 using TimeTrackerApi.Services;
-using Microsoft.AspNetCore.HttpOverrides;
+
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 var env = builder.Environment;
-
-// Optional but helpful if you deal with DateTime kinds
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 // ============================
 //        Data / EF
 // ============================
 if (env.IsProduction())
 {
-    // Try both config connection string and env var fallback
     var pg = builder.Configuration.GetConnectionString("DefaultConnection")
              ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
              ?? throw new InvalidOperationException("Missing Postgres connection string (ConnectionStrings__DefaultConnection).");
@@ -226,9 +228,17 @@ else
 // ============================
 //       Identity + JWT
 // ============================
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
-    .AddEntityFrameworkStores<TimeTrackerContext>()
-    .AddDefaultTokenProviders();
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+{
+    options.User.RequireUniqueEmail = true;
+    options.Password.RequiredLength = 8;
+    options.Password.RequireDigit = true;
+    options.Password.RequireNonAlphanumeric = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireLowercase = true;
+})
+.AddEntityFrameworkStores<TimeTrackerContext>()
+.AddDefaultTokenProviders();
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
 
@@ -250,7 +260,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = true;
+    options.RequireHttpsMetadata = env.IsProduction(); // allow HTTP in dev
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -263,17 +273,36 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = validateAudience,
         ValidAudience = jwtAudience,
 
-        ValidateLifetime = true
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+
+    // Map sub -> NameIdentifier so services can rely on ClaimTypes.NameIdentifier
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = ctx =>
+        {
+            var id = (ClaimsIdentity?)ctx.Principal?.Identity;
+            if (id is null) return Task.CompletedTask;
+
+            var hasNameId = id.FindFirst(ClaimTypes.NameIdentifier) != null;
+            var sub = id.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                      ?? id.FindFirst("sub")?.Value;
+
+            if (!hasNameId && !string.IsNullOrEmpty(sub))
+                id.AddClaim(new Claim(ClaimTypes.NameIdentifier, sub));
+
+            return Task.CompletedTask;
+        }
     };
 });
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthorization(); // explicit
 
 // ============================
 //            CORS
 // ============================
-// If Cors:AllowedOrigins is provided (comma-separated), we’ll use it.
-// Otherwise we allow timetrackerapp.pages.dev and its preview subdomains.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ui", policy =>
@@ -282,10 +311,11 @@ builder.Services.AddCors(options =>
 
         if (allowed != null && allowed.Length > 0)
         {
+            // ensure these values include scheme, e.g. "http://localhost:4200"
             policy.WithOrigins(allowed)
                   .AllowAnyHeader()
                   .AllowAnyMethod();
-            // .AllowCredentials(); // only if you use cookies
+            // .AllowCredentials(); // only when using cookies
         }
         else
         {
@@ -298,7 +328,6 @@ builder.Services.AddCors(options =>
             })
             .AllowAnyHeader()
             .AllowAnyMethod();
-            // .AllowCredentials(); // only if you use cookies
         }
     });
 });
@@ -312,8 +341,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "TimeTracker API", Version = "v1" });
-
-    // JWT in Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -325,13 +352,7 @@ builder.Services.AddSwaggerGen(c =>
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
-        }
+        { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() }
     });
 });
 
@@ -343,15 +364,13 @@ builder.Services.AddScoped<TimeEntryService>();
 // ============================
 var app = builder.Build();
 
-// Swagger in prod is fine for now
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// Trust Render’s proxy headers
+// Forwarded headers should be early (before HTTPS/CORS/Auth) so scheme is correct
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-    // Accept any proxy (Render). If you want to lock this down later, configure KnownProxies/Networks.
     KnownNetworks = { },
     KnownProxies = { }
 });
@@ -365,7 +384,7 @@ app.UseAuthorization();
 app.MapGet("/healthz", () => Results.Ok("ok")).AllowAnonymous();
 app.MapControllers();
 
-// Auto-migrate in Production
+// Auto-migrate in Production (Postgres)
 if (env.IsProduction())
 {
     using var scope = app.Services.CreateScope();
